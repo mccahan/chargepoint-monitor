@@ -1,0 +1,1 @@
+python-chargepoint==1.9.2
