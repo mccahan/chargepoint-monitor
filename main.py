@@ -43,7 +43,12 @@ if not chargers:
 def charging_monitor_loop():
     global latest_data, overhead, auto_adjust, manual_amperage_limit
     while True:
-        charger = client.get_home_charger_status(charger_id=chargers[0])
+        try:
+            charger = client.get_home_charger_status(charger_id=chargers[0])
+        except Exception as e:
+            print("Failed to get charger status:", e)
+            sleep(15)
+            continue
         charger_status = charger.charging_status
         print(f"Charger status: {charger_status} at {charger.amperage_limit}A")
         current_excess = 0
@@ -124,18 +129,19 @@ def charging_monitor_loop():
                             print("Failed to set charger amperage limit:", e)
                 else:
                     max_current = min(charger.possible_amperage_limits)
-                    print(f"Setting charger to minimum possible amperage limit: {max_current}A")
-                    try:
-                        client.set_amperage_limit(chargers[0], max_current)
-                        with data_lock:
-                            latest_data['amperage_limit'] = max_current
-                    except Exception as e:
-                        print("Failed to set charger amperage limit:", e)
+                    if charger.amperage_limit != max_current:
+                        print(f"Setting charger to minimum possible amperage limit: {max_current}A")
+                        try:
+                            client.set_amperage_limit(chargers[0], max_current)
+                            with data_lock:
+                                latest_data['amperage_limit'] = max_current
+                        except Exception as e:
+                            print("Failed to set charger amperage limit:", e)
         else:
             print("Charger is not charging.")
 
         print()
-        sleep(30)
+        sleep(15)
 
 
 # WebSocket handler that sends the latest charging data.
