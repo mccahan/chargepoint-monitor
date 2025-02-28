@@ -1,1 +1,2 @@
 python-chargepoint==1.9.2
+aiohttp==3.11.13
