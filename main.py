@@ -205,7 +205,7 @@ async def websocket_handler(request):
 
 # Explicit route to serve index.html for the root path.
 async def index_handler(request):
-    static_dir = os.path.abspath('./')
+    static_dir = os.path.abspath('./static')
     index_path = os.path.join(static_dir, 'index.html')
     return web.FileResponse(index_path)
 
@@ -216,9 +216,9 @@ app = web.Application()
 app.router.add_get('/', index_handler)
 
 # Serve all static files (including JS and CSS) from the current directory.
-static_path = os.path.abspath('./')
+static_path = os.path.abspath('./static')
 print("Serving static files from:", static_path)
-app.router.add_static('/static/', path=static_path, show_index=True)
+app.router.add_static('/', path=static_path, show_index=True)
 
 # WebSocket endpoint.
 app.router.add_get('/ws', websocket_handler)

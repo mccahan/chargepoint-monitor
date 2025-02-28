@@ -1,3 +1,8 @@
+FROM mccahan/v0-export-builder:latest AS build-static
+
+COPY static-app.zip /app/app.zip
+RUN build-static
+
 # Use the official Python image from the Docker Hub
 FROM python:3.9-alpine
 
@@ -6,6 +11,9 @@ WORKDIR /app
 
 # Copy the requirements file into the container
 COPY requirements.txt .
+
+COPY --from=build-static /app/output-dir /app/static
+RUN find /app/static -type f -exec sed -i 's/http:\/\/localhost:8085\/ws/\/ws/g' {} +
 
 # Install any dependencies
 RUN pip install --no-cache-dir -r requirements.txt
