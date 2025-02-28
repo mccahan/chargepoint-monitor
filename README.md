@@ -1,12 +1,12 @@
 # ChargePoint pyPowerwall Monitor
 
-Use pyPowerwall (https://github.com/jasonacox/pypowerwall)[pyPowerwall Proxy] and (https://github.com/mbillow/python-chargepoint)[python-chargepoint] alongside a ChargePoint Home Flex to charge your EV only off of excess solar power.
+Use pyPowerwall [pyPowerwall Proxy](https://github.com/jasonacox/pypowerwall) and [python-chargepoint](https://github.com/mbillow/python-chargepoint) alongside a ChargePoint Home Flex to charge your EV only off of excess solar power.
 
 ![ChargePoint Monitor Screenshot](screenshot.png)
 
 ## Running with Docker
 
-Assuming you have (https://github.com/jasonacox/pypowerwall/tree/main/proxy)[pyPowerwall Proxy Server] running on localhost:8675:
+Assuming you have [pyPowerwall Proxy Server](https://github.com/jasonacox/pypowerwall/tree/main/proxy) running on localhost:8675:
 
 ```sh
 docker run --rm -p 8085:8085 \
