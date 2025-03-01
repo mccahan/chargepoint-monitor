@@ -26,6 +26,8 @@ latest_data = {
     "excess": None,
     "minimum_overhead": overhead,
     "total_solar": None,
+    "auto_adjust": auto_adjust,
+    "manual_amperage_limit": manual_amperage_limit,
 }
 data_lock = threading.Lock()
 
@@ -41,8 +43,11 @@ if not chargers:
     exit()
 
 def charging_monitor_loop():
-    global latest_data, overhead, auto_adjust, manual_amperage_limit
+    global latest_data, overhead
+
     while True:
+        auto_adjust = latest_data['auto_adjust']
+        manual_amperage_limit = latest_data['manual_amperage_limit']
         try:
             charger = client.get_home_charger_status(charger_id=chargers[0])
         except Exception as e:
@@ -56,9 +61,14 @@ def charging_monitor_loop():
         try:
             response = requests.get(pypowerwall_url + "/aggregates")
             data = response.json()
-            solar_power = data["solar"]["instant_power"]
-            home_power = data["load"]["instant_power"]
-            grid_power = data["site"]["instant_power"]
+            solar_power = math.ceil(data["solar"]["instant_power"])
+            home_power = math.ceil(data["load"]["instant_power"])
+            grid_power = math.ceil(data["site"]["instant_power"])
+
+            response = requests.get(pypowerwall_url + "/api/system_status/soe")
+            data = response.json()
+            battery_percentage = data["percentage"]
+            print(f"Solar: {solar_power}W, Home: {home_power}W, Grid: {grid_power}W, Battery: {battery_percentage}%")
         except Exception as e:
             print("Failed to get Powerwall data:", e)
             sleep(30)
@@ -167,6 +177,8 @@ async def websocket_handler(request):
                 except json.JSONDecodeError:
                     print("Invalid JSON received:", msg.data)
                     continue
+                
+                manual_amperage_limit = None
 
                 # Update settings based on the received message.
                 if "auto_adjust" in settings:
@@ -185,6 +197,8 @@ async def websocket_handler(request):
 
                 with data_lock:
                     latest_data["minimum_overhead"] = overhead
+                    latest_data["manual_amperage_limit"] = manual_amperage_limit
+                    latest_data["auto_adjust"] = auto_adjust
                 
                 print()
 
