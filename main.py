@@ -17,7 +17,7 @@ overhead = int(os.getenv("MIN_POWER_OVERHEAD", 240))  # minimum_overhead setting
 username = os.getenv("CHARGEPOINT_USERNAME")
 password = os.getenv("CHARGEPOINT_PASSWORD")
 pypowerwall_url = os.getenv("PYPOWERWALL_URL", "http://localhost:8675")
-max_current_limit = os.getenv("MAX_CURRENT", 24)
+max_current_limit = int(os.getenv("MAX_CURRENT", 24))  # ensure it's an integer
 
 # Global dictionary to hold the latest charging information.
 latest_data = {
@@ -63,6 +63,7 @@ def charging_monitor_loop():
             data = response.json()
             solar_power = math.ceil(data["solar"]["instant_power"])
             home_power = math.ceil(data["load"]["instant_power"])
+            battery_power = math.ceil(data["battery"]["instant_power"])
             grid_power = math.ceil(data["site"]["instant_power"])
 
             response = requests.get(pypowerwall_url + "/api/system_status/soe")
@@ -110,43 +111,76 @@ def charging_monitor_loop():
                         print("Failed to set charger amperage limit:", e)
             else:
                 # Auto-adjust mode.
-                if current_excess > latest_data['minimum_overhead']:
-                    max_current = math.floor((current_excess - latest_data['minimum_overhead']) / 240)
-
-                    if (current_excess < 0):
-                        max_current = 8
-                    
-                    # Make sure we don't exceed our configured max limit
-                    if max_current > max_current_limit:
-                        max_current = max_current_limit
-
-                    possible_limits = charger.possible_amperage_limits
-                    valid_limits = [limit for limit in possible_limits if limit <= max_current]
-                    if valid_limits:
-                        max_current = max(valid_limits)
+                # If battery is nearly full (>95%), use incremental adjustments.
+                if battery_percentage > 95:
+                    supplemental_power = grid_power + battery_power
+                    # Increase limit until grid starts drawing power (>200W)
+                    if supplemental_power < 240 and grid_power < 240:
+                        new_limit = min(charger.amperage_limit + 1, max_current_limit)
+                        if new_limit != charger.amperage_limit:
+                            print(f"Increasing amperage limit incrementally to {new_limit}A (Battery >95% and grid_power {grid_power}W)")
+                            try:
+                                client.set_amperage_limit(chargers[0], new_limit)
+                                with data_lock:
+                                    latest_data['amperage_limit'] = new_limit
+                            except Exception as e:
+                                print("Failed to set charger amperage limit:", e)
+                        else:
+                            print("Already at maximum amperage limit; cannot increase further.")
+                    # If battery is being used (battery_power >200W), lower the limit.
+                    elif battery_power > 200 or grid_power > 200:
+                        possible_limits = charger.possible_amperage_limits
+                        new_limit = max(min(possible_limits), charger.amperage_limit - 1)
+                        if new_limit != charger.amperage_limit:
+                            print(f"Decreasing amperage limit incrementally to {new_limit}A (battery_power {battery_power}W >200)")
+                            try:
+                                client.set_amperage_limit(chargers[0], new_limit)
+                                with data_lock:
+                                    latest_data['amperage_limit'] = new_limit
+                            except Exception as e:
+                                print("Failed to set charger amperage limit:", e)
+                        else:
+                            print("Already at the minimum amperage limit; cannot decrease further.")
                     else:
-                        max_current = 8
-                    if max_current < 8 or max_current > 40:
-                        max_current = 8
-                    if max_current != charger.amperage_limit:
-                        max_power = max_current * 240
-                        print(f"Setting charger to {max_current}A to use {max_power}W")
-                        try:
-                            client.set_amperage_limit(chargers[0], max_current)
-                            with data_lock:
-                                latest_data['amperage_limit'] = max_current
-                        except Exception as e:
-                            print("Failed to set charger amperage limit:", e)
+                        print("Battery >95% but no incremental adjustment needed (grid and battery power thresholds not met).")
                 else:
-                    max_current = min(charger.possible_amperage_limits)
-                    if charger.amperage_limit != max_current:
-                        print(f"Setting charger to minimum possible amperage limit: {max_current}A")
-                        try:
-                            client.set_amperage_limit(chargers[0], max_current)
-                            with data_lock:
-                                latest_data['amperage_limit'] = max_current
-                        except Exception as e:
-                            print("Failed to set charger amperage limit:", e)
+                    # Original auto-adjust logic when battery is not near full.
+                    if current_excess > latest_data['minimum_overhead']:
+                        max_current = math.floor((current_excess - latest_data['minimum_overhead']) / 240)
+                        if current_excess < 0:
+                            max_current = 8
+                        
+                        # Make sure we don't exceed our configured max limit.
+                        if max_current > max_current_limit:
+                            max_current = max_current_limit
+
+                        possible_limits = charger.possible_amperage_limits
+                        valid_limits = [limit for limit in possible_limits if limit <= max_current]
+                        if valid_limits:
+                            max_current = max(valid_limits)
+                        else:
+                            max_current = 8
+                        if max_current < 8 or max_current > 40:
+                            max_current = 8
+                        if max_current != charger.amperage_limit:
+                            max_power = max_current * 240
+                            print(f"Setting charger to {max_current}A to use {max_power}W")
+                            try:
+                                client.set_amperage_limit(chargers[0], max_current)
+                                with data_lock:
+                                    latest_data['amperage_limit'] = max_current
+                            except Exception as e:
+                                print("Failed to set charger amperage limit:", e)
+                    else:
+                        max_current = min(charger.possible_amperage_limits)
+                        if charger.amperage_limit != max_current:
+                            print(f"Setting charger to minimum possible amperage limit: {max_current}A")
+                            try:
+                                client.set_amperage_limit(chargers[0], max_current)
+                                with data_lock:
+                                    latest_data['amperage_limit'] = max_current
+                            except Exception as e:
+                                print("Failed to set charger amperage limit:", e)
         else:
             print("Charger is not charging.")
 
@@ -155,7 +189,6 @@ def charging_monitor_loop():
 
 
 # WebSocket handler that sends the latest charging data.
-# WebSocket handler that both sends the latest charging data and listens for settings updates.
 async def websocket_handler(request):
     global overhead, auto_adjust, manual_amperage_limit
     ws = web.WebSocketResponse()
