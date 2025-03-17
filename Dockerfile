@@ -12,14 +12,14 @@ WORKDIR /app
 # Copy the requirements file into the container
 COPY requirements.txt .
 
-COPY --from=build-static /app/output-dir /app/static
-RUN find /app/static -type f -exec sed -i 's/http:\/\/localhost:8085\/ws/\/ws/g' {} +
-
 # Install any dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code into the container
 COPY . .
+
+COPY --from=build-static /app/output-dir /app/static
+RUN find /app/static -type f -exec sed -i 's/http:\/\/localhost:8085\/ws/\/ws/g' {} +
 
 # Command to run the application
 CMD ["python", "-u", "main.py"]
